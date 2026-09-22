@@ -1,4 +1,15 @@
-## Unreleased
+## 0.4.0 - 2026-09-22
+
+* Improved default rectangular Hero return transitions when the source child
+  provides its own clipping or rounded layout.
+* Added configurable enter and exit Hero animations with fast, normal, and slow
+  transition presets.
+* Added the `onPageChanged` callback for multi-image viewers.
+* Added a responsive desktop Web preview frame and GitHub Pages deployment.
+* Expanded the README with installation, API, Hero shape, and live preview
+  documentation.
+
+## 0.3.0
 
 * Improved Hero rendering with a thumbnail-first static layer and deferred
   full-resolution interaction layer.

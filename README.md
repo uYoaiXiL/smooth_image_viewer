@@ -1,9 +1,14 @@
 # smooth_image_viewer
 
-[![Live Demo](https://img.shields.io/badge/demo-live-4c8bf5)](https://uyoaiXiL.github.io/smooth_image_viewer/)
+[![pub.dev](https://img.shields.io/pub/v/smooth_image_viewer.svg)](https://pub.dev/packages/smooth_image_viewer)
+[![Live Demo](https://img.shields.io/badge/demo-live-4c8bf5)](https://uyoaixl.github.io/smooth_image_viewer/)
 
 A lightweight Flutter image viewer focused on smooth Hero transitions, a
 thumbnail-first first frame, and gesture-first interaction.
+
+## 🎬 Preview
+
+[Open the interactive Flutter Web preview](https://uyoaixl.github.io/smooth_image_viewer/)
 
 ## Why this package
 
@@ -24,7 +29,7 @@ thumbnail-first first frame, and gesture-first interaction.
 
 ```yaml
 dependencies:
-  smooth_image_viewer: ^0.1.0
+  smooth_image_viewer: ^0.4.0
 ```
 
 ## Quick start
