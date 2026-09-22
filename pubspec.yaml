@@ -1,7 +1,14 @@
 name: smooth_image_viewer
 description: "A lightweight Flutter image viewer with gesture dismissal, paging, zoom, and Hero transitions."
 version: 0.1.0
-homepage: https://github.com/lixiaoyu/smooth_image_viewer
+homepage: https://github.com/uYoaiXiL/smooth_image_viewer
+repository: https://github.com/uYoaiXiL/smooth_image_viewer
+issue_tracker: https://github.com/uYoaiXiL/smooth_image_viewer/issues
+topics:
+  - image-viewer
+  - photo-viewer
+  - gestures
+  - hero-animation
 
 environment:
   sdk: ^3.11.3
