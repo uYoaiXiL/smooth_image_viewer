@@ -61,7 +61,7 @@ class GalleryPage extends StatelessWidget {
                   child: _HeroSample(
                     label: '圆形',
                     tag: 'circle',
-                    shape: const ImageViewerShape.circle(),
+                    shape: const ImageViewerShape.rounded(99),
                     image: images[1],
                   ),
                 ),
@@ -92,8 +92,47 @@ class GalleryPage extends StatelessWidget {
             ),
           ),
           _Section(
+            title: '过渡速度档位',
+            child: Row(
+              children: [
+                Expanded(
+                  child: _HeroSample(
+                    label: '快',
+                    tag: 'speed-fast',
+                    image: images[3],
+                    transitionSpeed: ImageViewerTransitionSpeed.fast,
+                    // shape: const ImageViewerShape.rounded(12),
+                  ),
+                ),
+                Expanded(
+                  child: _HeroSample(
+                    label: '中（默认）',
+                    tag: 'speed-normal',
+                    image: images[4],
+                    transitionSpeed: ImageViewerTransitionSpeed.normal,
+                    // shape: const ImageViewerShape.rounded(12),
+                  ),
+                ),
+                Expanded(
+                  child: _HeroSample(
+                    label: '慢',
+                    tag: 'speed-slow',
+                    image: images[5],
+                    transitionSpeed: ImageViewerTransitionSpeed.slow,
+                    // shape: const ImageViewerShape.rounded(12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _Section(
             title: '单图预览',
-            child: _HeroSample(label: '无 Hero 单图', tag: null, image: images[0]),
+            child: _HeroSample(
+              label: '无 Hero 单图',
+              tag: null,
+              image: images[0],
+              shape: const ImageViewerShape.rounded(12),
+            ),
           ),
         ],
       ),
@@ -141,6 +180,7 @@ class _GalleryGrid extends StatelessWidget {
       ),
       itemBuilder: (_, index) => ImageViewerHero(
         tag: 'gallery-$index',
+        shape: const ImageViewerShape.rounded(12),
         child: _PreviewTile(
           image: images[index],
           onTap: () => ImageViewerRoute.open(
@@ -165,12 +205,14 @@ class _HeroSample extends StatelessWidget {
     required this.image,
     required this.tag,
     this.shape = const ImageViewerShape.rectangle(),
+    this.transitionSpeed = ImageViewerTransitionSpeed.normal,
   });
 
   final String label;
   final AssetImage image;
   final Object? tag;
   final ImageViewerShape shape;
+  final ImageViewerTransitionSpeed transitionSpeed;
 
   @override
   Widget build(BuildContext context) {
@@ -182,6 +224,7 @@ class _HeroSample extends StatelessWidget {
         initialIndex: 0,
         heroTags: <Object?>[tag],
         previewProviders: <ImageProvider<Object>?>[image],
+        transitionSpeed: transitionSpeed,
       ),
     );
     return Padding(
@@ -212,7 +255,7 @@ class _PreviewTile extends StatelessWidget {
       aspectRatio: 0.8,
       child: Material(
         clipBehavior: Clip.antiAlias,
-        borderRadius: BorderRadius.circular(12),
+        // borderRadius: BorderRadius.circular(12),
         child: Ink.image(
           image: image,
           fit: BoxFit.cover,

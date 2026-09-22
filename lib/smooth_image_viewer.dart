@@ -7,6 +7,23 @@ library;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+/// Preset durations for opening and closing the viewer.
+enum ImageViewerTransitionSpeed { fast, normal, slow }
+
+extension on ImageViewerTransitionSpeed {
+  Duration get enterDuration => switch (this) {
+    ImageViewerTransitionSpeed.fast => const Duration(milliseconds: 150),
+    ImageViewerTransitionSpeed.normal => const Duration(milliseconds: 200),
+    ImageViewerTransitionSpeed.slow => const Duration(milliseconds: 280),
+  };
+
+  Duration get exitDuration => switch (this) {
+    ImageViewerTransitionSpeed.fast => const Duration(milliseconds: 180),
+    ImageViewerTransitionSpeed.normal => const Duration(milliseconds: 240),
+    ImageViewerTransitionSpeed.slow => const Duration(milliseconds: 320),
+  };
+}
+
 /// Defines the shape used by an [ImageViewerHero] source widget.
 sealed class ImageViewerShape {
   const ImageViewerShape();
@@ -89,6 +106,11 @@ class ImageViewerHero extends StatelessWidget {
     };
     return Hero(
       tag: tag,
+      createRectTween: (begin, end) => RectTween(begin: begin, end: end),
+      flightShuttleBuilder: _heroFlight,
+      // Keep the source image visible while the return shuttle settles.
+      // Without this, Flutter hides the source for a frame and the slot
+      // flashes before the shuttle reaches it.
       placeholderBuilder: (_, _, child) => child,
       child: content,
     );
@@ -116,6 +138,11 @@ class ImageViewerRoute {
     Color backgroundColor = Colors.black,
     bool showCloseButton = true,
     bool showPageIndicator = true,
+    bool enableEnterHero = true,
+    bool enableExitHero = true,
+    ImageViewerTransitionSpeed transitionSpeed =
+        ImageViewerTransitionSpeed.normal,
+    ValueChanged<int>? onPageChanged,
   }) {
     if (images.isEmpty) return Future<void>.value();
     final index = initialIndex.clamp(0, images.length - 1);
@@ -130,11 +157,14 @@ class ImageViewerRoute {
           backgroundColor: backgroundColor,
           showCloseButton: showCloseButton,
           showPageIndicator: showPageIndicator,
+          enableEnterHero: enableEnterHero,
+          enableExitHero: enableExitHero,
+          onPageChanged: onPageChanged,
         ),
         transitionsBuilder: (_, animation, _, child) =>
             FadeTransition(opacity: animation, child: child),
-        transitionDuration: const Duration(milliseconds: 180),
-        reverseTransitionDuration: const Duration(milliseconds: 240),
+        transitionDuration: transitionSpeed.enterDuration,
+        reverseTransitionDuration: transitionSpeed.exitDuration,
       ),
     );
   }
@@ -149,6 +179,9 @@ class _ViewerPage extends StatefulWidget {
     required this.backgroundColor,
     required this.showCloseButton,
     required this.showPageIndicator,
+    required this.enableEnterHero,
+    required this.enableExitHero,
+    required this.onPageChanged,
   });
   final List<ImageProvider<Object>> images;
   final int initialIndex;
@@ -157,6 +190,9 @@ class _ViewerPage extends StatefulWidget {
   final Color backgroundColor;
   final bool showCloseButton;
   final bool showPageIndicator;
+  final bool enableEnterHero;
+  final bool enableExitHero;
+  final ValueChanged<int>? onPageChanged;
 
   @override
   State<_ViewerPage> createState() => _ViewerPageState();
@@ -174,6 +210,7 @@ class _ViewerPageState extends State<_ViewerPage>
   bool _dragging = false;
   bool _cancelled = false;
   bool _heroEnabled = false;
+  bool _settled = false;
   bool _popping = false;
   final Set<int> _zoomedPages = <int>{};
   Animation<Offset>? _resetAnimation;
@@ -184,6 +221,7 @@ class _ViewerPageState extends State<_ViewerPage>
   void initState() {
     super.initState();
     _index = widget.initialIndex;
+    _heroEnabled = widget.enableEnterHero;
     _pages = PageController(initialPage: _index);
     _reset = AnimationController(
       vsync: this,
@@ -198,10 +236,29 @@ class _ViewerPageState extends State<_ViewerPage>
     if (identical(animation, _routeAnimation)) return;
     _routeAnimation?.removeStatusListener(_routeStatus);
     _routeAnimation = animation;
-    if (animation?.status == AnimationStatus.completed) {
-      _heroEnabled = true;
+    final route = ModalRoute.of(context);
+    if (animation?.status == AnimationStatus.completed &&
+        !(route?.offstage ?? false)) {
+      _heroEnabled = widget.enableExitHero;
+      _settled = true;
     } else {
+      _heroEnabled = animation?.status == AnimationStatus.reverse
+          ? widget.enableExitHero
+          : widget.enableEnterHero;
+      _settled =
+          animation?.status == AnimationStatus.reverse &&
+          !widget.enableExitHero;
       animation?.addStatusListener(_routeStatus);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !identical(_routeAnimation, animation)) return;
+        if (animation?.status == AnimationStatus.completed &&
+            !(ModalRoute.of(context)?.offstage ?? false)) {
+          setState(() {
+            _heroEnabled = widget.enableExitHero;
+            _settled = true;
+          });
+        }
+      });
     }
   }
 
@@ -251,12 +308,17 @@ class _ViewerPageState extends State<_ViewerPage>
                           return;
                         }
                         setState(() => _index = value);
+                        widget.onPageChanged?.call(value);
                       },
                       itemBuilder: (_, index) => _ViewerImage(
+                        key: ValueKey<Object?>(
+                          Object.hash(widget.images[index], index),
+                        ),
                         image: widget.images[index],
                         preview: _preview(index),
                         heroTag: _heroTag(index),
                         heroEnabled: _heroEnabled && index == _index,
+                        settled: _settled,
                         onZoomChanged: (zoomed) => setState(() {
                           if (zoomed) {
                             _zoomedPages.add(index);
@@ -398,25 +460,44 @@ class _ViewerPageState extends State<_ViewerPage>
   }
 
   void _routeStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed && mounted) {
-      _routeAnimation?.removeStatusListener(_routeStatus);
-      setState(() => _heroEnabled = true);
+    if (!mounted) return;
+    if (status == AnimationStatus.completed &&
+        !(ModalRoute.of(context)?.offstage ?? false)) {
+      setState(() {
+        _heroEnabled = widget.enableExitHero;
+        _settled = true;
+      });
+    } else if (status == AnimationStatus.forward) {
+      setState(() {
+        _heroEnabled = widget.enableEnterHero;
+        _settled = false;
+      });
+    } else if (status == AnimationStatus.reverse) {
+      setState(() {
+        _heroEnabled = widget.enableExitHero;
+        _settled = !widget.enableExitHero;
+      });
+    } else if (status == AnimationStatus.dismissed) {
+      setState(() => _settled = false);
     }
   }
 }
 
 class _ViewerImage extends StatefulWidget {
   const _ViewerImage({
+    super.key,
     required this.image,
     required this.preview,
     required this.heroTag,
     required this.heroEnabled,
+    required this.settled,
     required this.onZoomChanged,
   });
   final ImageProvider<Object> image;
   final ImageProvider<Object>? preview;
   final Object? heroTag;
   final bool heroEnabled;
+  final bool settled;
   final ValueChanged<bool> onZoomChanged;
 
   @override
@@ -450,42 +531,58 @@ class _ViewerImageState extends State<_ViewerImage>
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (_, constraints) {
+        final staticImage = Image(
+          key: ValueKey<Object>(widget.preview ?? widget.image),
+          image: widget.preview ?? widget.image,
+          width: constraints.maxWidth,
+          fit: BoxFit.fitWidth,
+          alignment: Alignment.center,
+          gaplessPlayback: true,
+          errorBuilder: (_, _, _) => const SizedBox(
+            width: 42,
+            height: 42,
+            child: Icon(
+              Icons.broken_image_outlined,
+              color: Colors.white54,
+              size: 42,
+            ),
+          ),
+        );
+        final hero = widget.heroTag == null
+            ? staticImage
+            : HeroMode(
+                enabled: widget.heroEnabled,
+                child: Hero(
+                  tag: widget.heroTag!,
+                  createRectTween: (begin, end) =>
+                      RectTween(begin: begin, end: end),
+                  flightShuttleBuilder: _heroFlight,
+                  child: RepaintBoundary(child: staticImage),
+                ),
+              );
         final full = Image(
+          key: ValueKey<Object>(widget.image),
           image: widget.image,
           width: constraints.maxWidth,
           fit: BoxFit.fitWidth,
+          alignment: Alignment.center,
           gaplessPlayback: true,
           frameBuilder: (_, child, frame, sync) => AnimatedOpacity(
             opacity: frame != null || sync ? 1 : 0,
             duration: const Duration(milliseconds: 120),
             child: child,
           ),
+          errorBuilder: (_, _, _) => const SizedBox(
+            width: 42,
+            height: 42,
+            child: Icon(
+              Icons.broken_image_outlined,
+              color: Colors.white54,
+              size: 42,
+            ),
+          ),
         );
-        final child = widget.preview == null
-            ? full
-            : Stack(
-                alignment: Alignment.center,
-                children: [
-                  Image(
-                    image: widget.preview!,
-                    width: constraints.maxWidth,
-                    fit: BoxFit.fitWidth,
-                    gaplessPlayback: true,
-                  ),
-                  full,
-                ],
-              );
-        final hero = widget.heroTag == null
-            ? child
-            : HeroMode(
-                enabled: widget.heroEnabled,
-                child: Hero(
-                  tag: widget.heroTag!,
-                  flightShuttleBuilder: _heroFlight,
-                  child: child,
-                ),
-              );
-        return GestureDetector(
+        final interactive = GestureDetector(
           onDoubleTapDown: (details) =>
               _doubleTapPosition = details.localPosition,
           onDoubleTap: _handleDoubleTap,
@@ -500,9 +597,20 @@ class _ViewerImageState extends State<_ViewerImage>
             child: SizedBox(
               width: constraints.maxWidth,
               height: constraints.maxHeight,
-              child: Center(child: hero),
+              child: Center(child: full),
             ),
           ),
+        );
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              width: constraints.maxWidth,
+              height: constraints.maxHeight,
+              child: Center(child: hero),
+            ),
+            if (widget.settled) interactive,
+          ],
         );
       },
     );
@@ -554,27 +662,28 @@ Widget _heroFlight(
 ) {
   final from = (fromHeroContext.widget as Hero).child;
   final target = (toHeroContext.widget as Hero).child;
-  if (direction != HeroFlightDirection.pop ||
-      (target is! ClipOval && target is! ClipRRect)) {
+  if (direction != HeroFlightDirection.pop) {
     return from;
   }
+  if (target is! ClipOval && target is! ClipRRect) return target;
+  final targetImage = target is ClipOval
+      ? target.child
+      : (target as ClipRRect).child;
   return AnimatedBuilder(
     animation: animation,
-    child: from,
+    child: targetImage,
     builder: (_, child) => LayoutBuilder(
       builder: (_, constraints) {
         final progress = 1 - animation.value;
         final radius = target is ClipOval
             ? BorderRadius.circular(constraints.biggest.shortestSide / 2)
             : (target as ClipRRect).borderRadius;
-        return ClipRRect(
-          borderRadius: BorderRadiusGeometry.lerp(
-            BorderRadius.zero,
-            radius,
-            progress,
-          )!,
-          child: child,
-        );
+        final borderRadius = target is ClipOval
+            ? BorderRadius.circular(
+                constraints.biggest.shortestSide / 2 * progress,
+              )
+            : BorderRadiusGeometry.lerp(BorderRadius.zero, radius, progress)!;
+        return ClipRRect(borderRadius: borderRadius, child: child);
       },
     ),
   );

@@ -1,3 +1,8 @@
+## Unreleased
+
+* Added optional enter and exit Hero animation flags.
+* Added fast, normal, and slow transition speed presets.
+
 ## 0.1.0
 
 * Added single-image and multi-image preview routes.
