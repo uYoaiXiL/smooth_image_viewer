@@ -36,9 +36,8 @@ class GalleryPage extends StatelessWidget {
     'assets/6.webp',
   ];
 
-  List<AssetImage> get _images => _paths
-      .map((path) => AssetImage(path, package: 'smooth_image_viewer'))
-      .toList(growable: false);
+  List<AssetImage> get _images =>
+      _paths.map(AssetImage.new).toList(growable: false);
 
   @override
   Widget build(BuildContext context) {
