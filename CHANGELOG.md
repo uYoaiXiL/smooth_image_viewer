@@ -1,3 +1,6 @@
+## 0.5.0
+* fix live link
+
 ## 0.4.0 - 2026-09-22
 
 * Improved default rectangular Hero return transitions when the source child
