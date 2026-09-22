@@ -1,5 +1,7 @@
 # smooth_image_viewer
 
+[![Live Demo](https://img.shields.io/badge/demo-live-4c8bf5)](https://uyoaiXiL.github.io/smooth_image_viewer/)
+
 A lightweight Flutter image viewer focused on smooth Hero transitions, a
 thumbnail-first first frame, and gesture-first interaction.
 

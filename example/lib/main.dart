@@ -1,7 +1,51 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:smooth_image_viewer/smooth_image_viewer.dart';
 
-void main() => runApp(const ExampleApp());
+void main() => runApp(const _ExampleFrame(child: ExampleApp()));
+
+class _ExampleFrame extends StatelessWidget {
+  const _ExampleFrame({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!kIsWeb) return child;
+    return ColoredBox(
+      color: const Color(0xFFDEDEDB),
+      child: LayoutBuilder(
+        builder: (_, constraints) {
+          if (constraints.maxWidth < 600) return child;
+          final width = (constraints.maxWidth - 32).clamp(0.0, 430.0);
+          final height = (constraints.maxHeight - 32).clamp(0.0, 932.0);
+          return Center(
+            child: Container(
+              width: width,
+              height: height,
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF111111),
+                borderRadius: BorderRadius.circular(40),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x40000000),
+                    blurRadius: 80,
+                    offset: Offset(0, 30),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(32),
+                child: child,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
 
 class ExampleApp extends StatelessWidget {
   const ExampleApp({super.key});
