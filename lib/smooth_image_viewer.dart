@@ -315,6 +315,7 @@ class _ViewerPageState extends State<_ViewerPage>
                           Object.hash(widget.images[index], index),
                         ),
                         image: widget.images[index],
+                        pageController: _pages,
                         preview: _preview(index),
                         heroTag: _heroTag(index),
                         heroEnabled: _heroEnabled && index == _index,
@@ -487,6 +488,7 @@ class _ViewerImage extends StatefulWidget {
   const _ViewerImage({
     super.key,
     required this.image,
+    required this.pageController,
     required this.preview,
     required this.heroTag,
     required this.heroEnabled,
@@ -494,6 +496,7 @@ class _ViewerImage extends StatefulWidget {
     required this.onZoomChanged,
   });
   final ImageProvider<Object> image;
+  final PageController pageController;
   final ImageProvider<Object>? preview;
   final Object? heroTag;
   final bool heroEnabled;
@@ -510,6 +513,7 @@ class _ViewerImageState extends State<_ViewerImage>
   late final AnimationController _zoomAnimation;
   Animation<Matrix4>? _zoomTransform;
   bool _zoomed = false;
+  Drag? _mousePageDrag;
 
   @override
   void initState() {
@@ -522,6 +526,7 @@ class _ViewerImageState extends State<_ViewerImage>
 
   @override
   void dispose() {
+    _mousePageDrag?.cancel();
     _zoomAnimation.dispose();
     _transform.dispose();
     super.dispose();
@@ -548,8 +553,14 @@ class _ViewerImageState extends State<_ViewerImage>
             ),
           ),
         );
+        // Fit both axes while keeping the Hero bounds on the visible image.
+        // A width-fitted image alone crops tall images in a wide viewport.
+        final fittedStaticImage = FittedBox(
+          fit: BoxFit.contain,
+          child: staticImage,
+        );
         final hero = widget.heroTag == null
-            ? staticImage
+            ? fittedStaticImage
             : HeroMode(
                 enabled: widget.heroEnabled,
                 child: Hero(
@@ -557,7 +568,7 @@ class _ViewerImageState extends State<_ViewerImage>
                   createRectTween: (begin, end) =>
                       RectTween(begin: begin, end: end),
                   flightShuttleBuilder: _heroFlight,
-                  child: RepaintBoundary(child: staticImage),
+                  child: RepaintBoundary(child: fittedStaticImage),
                 ),
               );
         final full = Image(
@@ -594,10 +605,29 @@ class _ViewerImageState extends State<_ViewerImage>
             onInteractionStart: (_) => _zoomAnimation.stop(),
             onInteractionUpdate: (_) => _syncZoomState(),
             onInteractionEnd: (_) => _syncZoomState(),
-            child: SizedBox(
-              width: constraints.maxWidth,
-              height: constraints.maxHeight,
-              child: Center(child: full),
+            // Handle mouse paging inside InteractiveViewer so its scale
+            // recognizer cannot win the same drag first. Forward to the page
+            // position to retain its snapping, velocity, and edge physics.
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              supportedDevices: const {PointerDeviceKind.mouse},
+              onHorizontalDragStart: _zoomed ? null : _startMousePaging,
+              onHorizontalDragUpdate: _zoomed
+                  ? null
+                  : (details) => _mousePageDrag?.update(details),
+              onHorizontalDragEnd: _zoomed
+                  ? null
+                  : (details) => _mousePageDrag?.end(details),
+              onHorizontalDragCancel: _zoomed
+                  ? null
+                  : () => _mousePageDrag?.cancel(),
+              child: SizedBox(
+                width: constraints.maxWidth,
+                height: constraints.maxHeight,
+                child: Center(
+                  child: FittedBox(fit: BoxFit.contain, child: full),
+                ),
+              ),
             ),
           ),
         );
@@ -617,6 +647,14 @@ class _ViewerImageState extends State<_ViewerImage>
   }
 
   Offset _doubleTapPosition = Offset.zero;
+
+  void _startMousePaging(DragStartDetails details) {
+    _mousePageDrag?.cancel();
+    _mousePageDrag = widget.pageController.position.drag(
+      details,
+      () => _mousePageDrag = null,
+    );
+  }
 
   void _handleDoubleTap() {
     if (_zoomed) {

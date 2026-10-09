@@ -18,6 +18,9 @@ thumbnail-first first frame, and gesture-first interaction.
   then mount the full-resolution image and gesture layer after the route settles.
 - **Natural image interaction** — horizontal paging, pinch zoom, double-tap
   zoom, panning, and pull-down-to-dismiss with scale and background fade.
+- **Web and desktop interaction** — mouse dragging pages through images at
+  the initial scale and pans when zoomed. Previews fit within the available
+  width and height and adapt to window resizing.
 - **Shape-aware return animation** — rectangle, circle, uniform rounded corners,
   and four independently rounded corners.
 - **Preset motion speeds** — fast, normal, and slow timings without exposing
@@ -29,7 +32,7 @@ thumbnail-first first frame, and gesture-first interaction.
 
 ```yaml
 dependencies:
-  smooth_image_viewer: ^0.4.0
+  smooth_image_viewer: ^0.5.1
 ```
 
 ## Quick start

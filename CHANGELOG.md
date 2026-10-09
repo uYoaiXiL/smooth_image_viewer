@@ -1,3 +1,14 @@
+## 0.5.1 - 2026-10-09
+
+* Fixed mouse-drag paging on Web and desktop while preserving image panning
+  when zoomed and pull-down dismissal.
+* Fit previews within both viewport dimensions to display the entire image on
+  wide screens and adapt to window resizing, with matching Hero image bounds.
+* Added macOS and Windows example projects and constrained the gallery width
+  for desktop layouts.
+* Added regression coverage for mouse gestures, viewport resizing, and the
+  example preview flow.
+
 ## 0.5.0
 * fix live link
 

@@ -88,97 +88,107 @@ class GalleryPage extends StatelessWidget {
     final images = _images;
     return Scaffold(
       appBar: AppBar(title: const Text('Smooth Image Viewer')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const Text('点击图片进入预览，支持双击缩放、双指缩放、左右切换和下滑关闭。'),
-          const SizedBox(height: 16),
-          _Section(
-            title: '多图预览 + 缩略图首帧',
-            child: _GalleryGrid(images: images),
-          ),
-          _Section(
-            title: 'Hero 形状',
-            child: Row(
+      body: SingleChildScrollView(
+        child: Center(
+          child: Container(
+            width: 600,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Expanded(
-                  child: _HeroSample(
-                    label: '圆形',
-                    tag: 'circle',
-                    shape: const ImageViewerShape.rounded(99),
-                    image: images[1],
-                  ),
+                const Text('点击图片进入预览，支持双击缩放、双指缩放、左右切换和下滑关闭。'),
+                const SizedBox(height: 16),
+                _Section(
+                  title: '多图预览 + 缩略图首帧',
+                  child: _GalleryGrid(images: images),
                 ),
-                Expanded(
-                  child: _HeroSample(
-                    label: '统一圆角',
-                    tag: 'rounded',
-                    shape: const ImageViewerShape.rounded(20),
-                    image: images[2],
-                  ),
-                ),
-                Expanded(
-                  child: _HeroSample(
-                    label: '四角圆角',
-                    tag: 'corners',
-                    shape: const ImageViewerShape.roundedCorners(
-                      BorderRadius.only(
-                        topLeft: Radius.circular(28),
-                        topRight: Radius.circular(8),
-                        bottomRight: Radius.circular(24),
-                        bottomLeft: Radius.circular(4),
+                _Section(
+                  title: 'Hero 形状',
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _HeroSample(
+                          label: '圆形',
+                          tag: 'circle',
+                          shape: const ImageViewerShape.rounded(99),
+                          image: images[1],
+                        ),
                       ),
-                    ),
-                    image: images[3],
+                      Expanded(
+                        child: _HeroSample(
+                          label: '统一圆角',
+                          tag: 'rounded',
+                          shape: const ImageViewerShape.rounded(20),
+                          image: images[2],
+                        ),
+                      ),
+                      Expanded(
+                        child: _HeroSample(
+                          label: '四角圆角',
+                          tag: 'corners',
+                          shape: const ImageViewerShape.roundedCorners(
+                            BorderRadius.only(
+                              topLeft: Radius.circular(28),
+                              topRight: Radius.circular(8),
+                              bottomRight: Radius.circular(24),
+                              bottomLeft: Radius.circular(4),
+                            ),
+                          ),
+                          image: images[3],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _Section(
+                  title: '过渡速度档位',
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _HeroSample(
+                          label: '快',
+                          tag: 'speed-fast',
+                          image: images[3],
+                          transitionSpeed: ImageViewerTransitionSpeed.fast,
+                          // shape: const ImageViewerShape.rounded(12),
+                        ),
+                      ),
+                      Expanded(
+                        child: _HeroSample(
+                          label: '中（默认）',
+                          tag: 'speed-normal',
+                          image: images[4],
+                          transitionSpeed: ImageViewerTransitionSpeed.normal,
+                          // shape: const ImageViewerShape.rounded(12),
+                        ),
+                      ),
+                      Expanded(
+                        child: _HeroSample(
+                          label: '慢',
+                          tag: 'speed-slow',
+                          image: images[5],
+                          transitionSpeed: ImageViewerTransitionSpeed.slow,
+                          // shape: const ImageViewerShape.rounded(12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _Section(
+                  title: '单图预览',
+                  child: _HeroSample(
+                    label: '无 Hero 单图',
+                    tag: null,
+                    image: images[0],
+                    shape: const ImageViewerShape.rounded(12),
                   ),
                 ),
               ],
             ),
           ),
-          _Section(
-            title: '过渡速度档位',
-            child: Row(
-              children: [
-                Expanded(
-                  child: _HeroSample(
-                    label: '快',
-                    tag: 'speed-fast',
-                    image: images[3],
-                    transitionSpeed: ImageViewerTransitionSpeed.fast,
-                    // shape: const ImageViewerShape.rounded(12),
-                  ),
-                ),
-                Expanded(
-                  child: _HeroSample(
-                    label: '中（默认）',
-                    tag: 'speed-normal',
-                    image: images[4],
-                    transitionSpeed: ImageViewerTransitionSpeed.normal,
-                    // shape: const ImageViewerShape.rounded(12),
-                  ),
-                ),
-                Expanded(
-                  child: _HeroSample(
-                    label: '慢',
-                    tag: 'speed-slow',
-                    image: images[5],
-                    transitionSpeed: ImageViewerTransitionSpeed.slow,
-                    // shape: const ImageViewerShape.rounded(12),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _Section(
-            title: '单图预览',
-            child: _HeroSample(
-              label: '无 Hero 单图',
-              tag: null,
-              image: images[0],
-              shape: const ImageViewerShape.rounded(12),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
