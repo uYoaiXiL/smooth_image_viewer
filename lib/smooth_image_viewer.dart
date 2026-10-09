@@ -127,6 +127,27 @@ class ImageViewerRoute {
   /// the same indexes as [images]; missing entries simply disable that feature
   /// for the corresponding page.
   ///
+  /// [overlayBuilder] builds custom content with the current zero-based image
+  /// index and a context inside the preview route. It fills the viewport above
+  /// the images and below the built-in close button and page indicator. Use
+  /// [Align] or [Stack] to position content and [SafeArea] as needed. Set
+  /// [showCloseButton] or [showPageIndicator] to false to replace those controls.
+  ///
+  /// The overlay stays in place and fades during pull-down dismissal. Its
+  /// hit-tested content receives its own gestures; leave unused areas without
+  /// opaque hit targets so image gestures can pass through. The builder may
+  /// run more than once per page and should not perform side effects.
+  ///
+  /// [preloadAdjacentImages] optionally warms the previous and next image in
+  /// Flutter's shared image cache after the route or paging settles. Requests
+  /// run one at a time and obsolete queued neighbors are skipped. Providers
+  /// already loading cannot be cancelled. Cache eviction and byte limits remain
+  /// controlled by Flutter; use resized providers for very large images.
+  ///
+  /// [pageIndicatorSemanticLabelBuilder] customizes the screen-reader label
+  /// using a zero-based index and the total image count. It defaults to
+  /// "Image 1 of 3". The close tooltip uses [MaterialLocalizations].
+  ///
   /// The returned Future completes when the preview route is dismissed. An
   /// empty [images] list is ignored.
   static Future<void> open(
@@ -143,6 +164,9 @@ class ImageViewerRoute {
     ImageViewerTransitionSpeed transitionSpeed =
         ImageViewerTransitionSpeed.normal,
     ValueChanged<int>? onPageChanged,
+    IndexedWidgetBuilder? overlayBuilder,
+    bool preloadAdjacentImages = false,
+    String Function(int index, int total)? pageIndicatorSemanticLabelBuilder,
   }) {
     if (images.isEmpty) return Future<void>.value();
     final index = initialIndex.clamp(0, images.length - 1);
@@ -160,6 +184,9 @@ class ImageViewerRoute {
           enableEnterHero: enableEnterHero,
           enableExitHero: enableExitHero,
           onPageChanged: onPageChanged,
+          overlayBuilder: overlayBuilder,
+          preloadAdjacentImages: preloadAdjacentImages,
+          pageIndicatorSemanticLabelBuilder: pageIndicatorSemanticLabelBuilder,
         ),
         transitionsBuilder: (_, animation, _, child) =>
             FadeTransition(opacity: animation, child: child),
@@ -182,6 +209,9 @@ class _ViewerPage extends StatefulWidget {
     required this.enableEnterHero,
     required this.enableExitHero,
     required this.onPageChanged,
+    required this.overlayBuilder,
+    required this.preloadAdjacentImages,
+    required this.pageIndicatorSemanticLabelBuilder,
   });
   final List<ImageProvider<Object>> images;
   final int initialIndex;
@@ -193,6 +223,10 @@ class _ViewerPage extends StatefulWidget {
   final bool enableEnterHero;
   final bool enableExitHero;
   final ValueChanged<int>? onPageChanged;
+  final IndexedWidgetBuilder? overlayBuilder;
+  final bool preloadAdjacentImages;
+  final String Function(int index, int total)?
+  pageIndicatorSemanticLabelBuilder;
 
   @override
   State<_ViewerPage> createState() => _ViewerPageState();
@@ -206,7 +240,9 @@ class _ViewerPageState extends State<_ViewerPage>
   Offset _offset = Offset.zero;
   Offset? _start;
   int? _pointer;
-  int _pointers = 0;
+  final Set<int> _pointers = {};
+  bool _multiTouch = false;
+  bool _closing = false;
   bool _dragging = false;
   bool _cancelled = false;
   bool _heroEnabled = false;
@@ -216,6 +252,9 @@ class _ViewerPageState extends State<_ViewerPage>
   Animation<Offset>? _resetAnimation;
   Animation<double>? _routeAnimation;
   VelocityTracker? _velocity;
+  final Set<ImageProvider<Object>> _preloadAttempted = {};
+  bool _preloadScheduled = false;
+  bool _preloadRunning = false;
 
   @override
   void initState() {
@@ -232,10 +271,12 @@ class _ViewerPageState extends State<_ViewerPage>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _scheduleAdjacentPreload();
     final animation = ModalRoute.of(context)?.animation;
     if (identical(animation, _routeAnimation)) return;
     _routeAnimation?.removeStatusListener(_routeStatus);
     _routeAnimation = animation;
+    animation?.addStatusListener(_routeStatus);
     final route = ModalRoute.of(context);
     if (animation?.status == AnimationStatus.completed &&
         !(route?.offstage ?? false)) {
@@ -248,7 +289,6 @@ class _ViewerPageState extends State<_ViewerPage>
       _settled =
           animation?.status == AnimationStatus.reverse &&
           !widget.enableExitHero;
-      animation?.addStatusListener(_routeStatus);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !identical(_routeAnimation, animation)) return;
         if (animation?.status == AnimationStatus.completed &&
@@ -283,88 +323,128 @@ class _ViewerPageState extends State<_ViewerPage>
       backgroundColor: Colors.transparent,
       body: ColoredBox(
         color: widget.backgroundColor.withValues(alpha: opacity),
-        child: Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: _pointerDown,
-          onPointerMove: _pointerMove,
-          onPointerUp: _pointerUp,
-          onPointerCancel: _pointerCancel,
-          child: Stack(
-            children: [
-              Positioned.fill(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: _pointerDown,
+                onPointerMove: _pointerMove,
+                onPointerUp: _pointerUp,
+                onPointerCancel: _pointerCancel,
                 child: Transform.translate(
                   offset: _offset,
                   child: Transform.scale(
                     scale: (1 - progress).clamp(0.8, 1.0).toDouble(),
-                    child: PageView.builder(
-                      controller: _pages,
-                      physics: _isZoomed
-                          ? const NeverScrollableScrollPhysics()
-                          : const PageScrollPhysics(),
-                      itemCount: widget.images.length,
-                      onPageChanged: (value) {
-                        if (_isZoomed && value != _index) {
-                          _pages.jumpToPage(_index);
-                          return;
-                        }
-                        setState(() => _index = value);
-                        widget.onPageChanged?.call(value);
+                    child: NotificationListener<ScrollEndNotification>(
+                      onNotification: (notification) {
+                        if (notification.depth == 0) _scheduleAdjacentPreload();
+                        return false;
                       },
-                      itemBuilder: (_, index) => _ViewerImage(
-                        key: ValueKey<Object?>(
-                          Object.hash(widget.images[index], index),
-                        ),
-                        image: widget.images[index],
-                        pageController: _pages,
-                        preview: _preview(index),
-                        heroTag: _heroTag(index),
-                        heroEnabled: _heroEnabled && index == _index,
-                        settled: _settled,
-                        onZoomChanged: (zoomed) => setState(() {
-                          if (zoomed) {
-                            _zoomedPages.add(index);
-                          } else {
-                            _zoomedPages.remove(index);
+                      child: PageView.builder(
+                        controller: _pages,
+                        physics: _canPage
+                            ? const PageScrollPhysics()
+                            : const NeverScrollableScrollPhysics(),
+                        itemCount: widget.images.length,
+                        onPageChanged: (value) {
+                          if (_isZoomed && value != _index) {
+                            _pages.jumpToPage(_index);
+                            return;
                           }
-                        }),
+                          setState(() => _index = value);
+                          widget.onPageChanged?.call(value);
+                        },
+                        itemBuilder: (_, index) => _ViewerImage(
+                          key: ValueKey<Object?>(
+                            Object.hash(widget.images[index], index),
+                          ),
+                          image: widget.images[index],
+                          pageController: _pages,
+                          preview: _preview(index),
+                          heroTag: _heroTag(index),
+                          heroEnabled: _heroEnabled && index == _index,
+                          settled: _settled,
+                          interactionEnabled: !_closing,
+                          canPage: () => _canPage,
+                          onZoomChanged: (zoomed) => setState(() {
+                            if (zoomed) {
+                              _zoomedPages.add(index);
+                            } else {
+                              _zoomedPages.remove(index);
+                            }
+                          }),
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-              if (widget.showCloseButton)
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  child: Opacity(
-                    opacity: opacity,
-                    child: SafeArea(
-                      child: IconButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close, color: Colors.white),
-                      ),
+            ),
+            if (widget.overlayBuilder != null)
+              Positioned.fill(
+                child: Opacity(
+                  opacity: opacity,
+                  child: Builder(
+                    builder: (context) =>
+                        widget.overlayBuilder!(context, _index),
+                  ),
+                ),
+              ),
+            if (widget.showCloseButton ||
+                (widget.showPageIndicator && widget.images.length > 1))
+              PositionedDirectional(
+                top: 0,
+                start: 0,
+                end: 0,
+                child: Opacity(
+                  opacity: opacity,
+                  child: SafeArea(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (widget.showCloseButton)
+                          IconButton(
+                            autofocus: true,
+                            tooltip: MaterialLocalizations.of(
+                              context,
+                            ).closeButtonTooltip,
+                            focusColor: Colors.white24,
+                            onPressed: _closing ? null : _dismiss,
+                            icon: const Icon(Icons.close, color: Colors.white),
+                          ),
+                        if (widget.showPageIndicator &&
+                            widget.images.length > 1)
+                          Expanded(
+                            child: Align(
+                              alignment: AlignmentDirectional.topEnd,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Semantics(
+                                  liveRegion: true,
+                                  excludeSemantics: true,
+                                  label:
+                                      widget.pageIndicatorSemanticLabelBuilder
+                                          ?.call(
+                                            _index,
+                                            widget.images.length,
+                                          ) ??
+                                      'Image ${_index + 1} of ${widget.images.length}',
+                                  child: Text(
+                                    '${_index + 1} / ${widget.images.length}',
+                                    textAlign: TextAlign.end,
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
-              if (widget.showPageIndicator && widget.images.length > 1)
-                Positioned(
-                  top: 0,
-                  right: 12,
-                  child: Opacity(
-                    opacity: opacity,
-                    child: SafeArea(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Text(
-                          '${_index + 1} / ${widget.images.length}',
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );
@@ -382,17 +462,93 @@ class _ViewerPageState extends State<_ViewerPage>
 
   bool get _isZoomed => _zoomedPages.contains(_index);
 
+  bool get _canInteract =>
+      mounted &&
+      !_closing &&
+      _routeAnimation?.status == AnimationStatus.completed &&
+      (ModalRoute.of(context)?.isCurrent ?? false);
+
+  bool get _canPage => _canInteract && !_isZoomed && !_dragging && !_multiTouch;
+
+  void _dismiss({bool fromDrag = false}) {
+    if (!_canInteract) return;
+    setState(() {
+      _closing = true;
+      _popping = fromDrag;
+    });
+    Navigator.of(context).pop();
+  }
+
+  void _scheduleAdjacentPreload() {
+    if (!widget.preloadAdjacentImages || _preloadScheduled) return;
+    _preloadScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _preloadScheduled = false;
+      if (mounted) _preloadNeighbors();
+    });
+  }
+
+  bool get _canPreload =>
+      mounted &&
+      !_popping &&
+      _routeAnimation?.status == AnimationStatus.completed &&
+      (ModalRoute.of(context)?.isCurrent ?? false) &&
+      _pages.hasClients &&
+      !_pages.position.isScrollingNotifier.value;
+
+  Future<void> _preloadNeighbors() async {
+    if (_preloadRunning || !_canPreload) return;
+    _preloadRunning = true;
+    try {
+      while (_canPreload) {
+        // Recompute after each request instead of accumulating a queue when
+        // the user pages quickly. Prefer the next image, then the previous one.
+        final neighbors = <ImageProvider<Object>>{
+          if (_index + 1 < widget.images.length) widget.images[_index + 1],
+          if (_index > 0) widget.images[_index - 1],
+        };
+        _preloadAttempted.retainAll(neighbors);
+        final pending = neighbors.difference(_preloadAttempted);
+        if (pending.isEmpty) break;
+        final image = pending.first;
+        _preloadAttempted.add(image);
+        if (!mounted) break;
+        await precacheImage(image, context, onError: (error, stackTrace) {});
+        // precacheImage releases its listener at the end of the frame. Wait
+        // for that release before starting another speculative request.
+        await WidgetsBinding.instance.endOfFrame;
+      }
+    } finally {
+      _preloadRunning = false;
+    }
+  }
+
   void _pointerDown(PointerDownEvent event) {
-    _pointers++;
-    if (_pointers != 1) {
-      _cancelled = true;
+    if (!_canInteract || !_pointers.add(event.pointer)) return;
+    if (_pointers.length != 1) {
+      setState(() {
+        _multiTouch = true;
+        _cancelled = true;
+        _dragging = false;
+      });
+      // Cancel an in-progress page drag/fling before a pinch takes over.
+      if (_pages.hasClients &&
+          (_pages.position.isScrollingNotifier.value ||
+              (_pages.page! - _index).abs() > 0.001)) {
+        _pages.jumpToPage(_index);
+      }
       _animateBack();
       return;
     }
-    if (_reset.isAnimating) _reset.stop();
+    if (_reset.isAnimating) {
+      _reset.stop();
+      setState(() => _offset = Offset.zero);
+    }
     _pointer = event.pointer;
     _start = event.position;
-    _cancelled = false;
+    // A zoomed pan or an interrupted page fling cannot become dismissal later
+    // in the same pointer sequence, even if the image returns to scale 1.
+    _cancelled = _isZoomed || _pages.position.isScrollingNotifier.value;
     _velocity = VelocityTracker.withKind(event.kind)
       ..addPosition(event.timeStamp, event.position);
   }
@@ -401,23 +557,37 @@ class _ViewerPageState extends State<_ViewerPage>
     if (event.pointer == _pointer) {
       _velocity?.addPosition(event.timeStamp, event.position);
     }
-    if (event.pointer != _pointer || _cancelled || _isZoomed) return;
+    if (!_canInteract || event.pointer != _pointer || _cancelled || _isZoomed) {
+      return;
+    }
     final start = _start;
     if (start == null) return;
     final delta = event.position - start;
     if (!_dragging) {
-      if (delta.dy < 8 || delta.dy <= delta.dx.abs()) return;
+      if (delta.distance < kTouchSlop) return;
+      // Commit once: ambiguous diagonals and horizontal/upward gestures are
+      // never reconsidered as dismissal after the finger changes direction.
+      if (delta.dy <= 0 || delta.dy <= delta.dx.abs() * 1.5) {
+        _cancelled = true;
+        return;
+      }
       _dragging = true;
     }
     setState(() => _offset = Offset(0, delta.dy.clamp(0.0, double.infinity)));
   }
 
   void _pointerUp(PointerUpEvent event) {
-    if (_pointers > 0) _pointers--;
+    if (!mounted) return;
+    if (!_pointers.remove(event.pointer)) return;
+    if (_pointers.isEmpty && _multiTouch) {
+      setState(() => _multiTouch = false);
+    }
     if (event.pointer != _pointer) return;
     _velocity?.addPosition(event.timeStamp, event.position);
     final downwardVelocity = _velocity?.getVelocity().pixelsPerSecond.dy ?? 0.0;
     final shouldPop =
+        _canInteract &&
+        !_isZoomed &&
         !_cancelled &&
         _dragging &&
         (_offset.dy > MediaQuery.sizeOf(context).height / 6 ||
@@ -425,24 +595,28 @@ class _ViewerPageState extends State<_ViewerPage>
     _pointer = null;
     _start = null;
     _velocity = null;
-    _dragging = false;
-    _cancelled = false;
+    setState(() => _dragging = false);
+    _cancelled = _pointers.isNotEmpty;
     if (shouldPop) {
-      setState(() => _popping = true);
-      Navigator.of(context).pop();
-    } else {
+      _dismiss(fromDrag: true);
+    } else if (!_closing) {
       _animateBack();
     }
   }
 
   void _pointerCancel(PointerCancelEvent event) {
-    if (_pointers > 0) _pointers--;
+    if (!mounted) return;
+    if (!_pointers.remove(event.pointer)) return;
+    if (_pointers.isEmpty && _multiTouch) {
+      setState(() => _multiTouch = false);
+    }
     if (event.pointer != _pointer) return;
     _pointer = null;
     _start = null;
     _velocity = null;
-    _dragging = false;
-    _animateBack();
+    setState(() => _dragging = false);
+    _cancelled = _pointers.isNotEmpty;
+    if (!_closing) _animateBack();
   }
 
   void _animateBack() {
@@ -468,13 +642,18 @@ class _ViewerPageState extends State<_ViewerPage>
         _heroEnabled = widget.enableExitHero;
         _settled = true;
       });
+      _scheduleAdjacentPreload();
     } else if (status == AnimationStatus.forward) {
       setState(() {
         _heroEnabled = widget.enableEnterHero;
         _settled = false;
       });
     } else if (status == AnimationStatus.reverse) {
+      _reset.stop();
       setState(() {
+        _closing = true;
+        _cancelled = true;
+        _dragging = false;
         _heroEnabled = widget.enableExitHero;
         _settled = !widget.enableExitHero;
       });
@@ -493,6 +672,8 @@ class _ViewerImage extends StatefulWidget {
     required this.heroTag,
     required this.heroEnabled,
     required this.settled,
+    required this.interactionEnabled,
+    required this.canPage,
     required this.onZoomChanged,
   });
   final ImageProvider<Object> image;
@@ -501,6 +682,8 @@ class _ViewerImage extends StatefulWidget {
   final Object? heroTag;
   final bool heroEnabled;
   final bool settled;
+  final bool interactionEnabled;
+  final bool Function() canPage;
   final ValueChanged<bool> onZoomChanged;
 
   @override
@@ -530,6 +713,15 @@ class _ViewerImageState extends State<_ViewerImage>
     _zoomAnimation.dispose();
     _transform.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ViewerImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.interactionEnabled) {
+      _zoomAnimation.stop();
+      _mousePageDrag?.cancel();
+    }
   }
 
   @override
@@ -639,7 +831,11 @@ class _ViewerImageState extends State<_ViewerImage>
               height: constraints.maxHeight,
               child: Center(child: hero),
             ),
-            if (widget.settled) interactive,
+            if (widget.settled)
+              IgnorePointer(
+                ignoring: !widget.interactionEnabled,
+                child: interactive,
+              ),
           ],
         );
       },
@@ -649,6 +845,7 @@ class _ViewerImageState extends State<_ViewerImage>
   Offset _doubleTapPosition = Offset.zero;
 
   void _startMousePaging(DragStartDetails details) {
+    if (!widget.canPage()) return;
     _mousePageDrag?.cancel();
     _mousePageDrag = widget.pageController.position.drag(
       details,
@@ -657,6 +854,11 @@ class _ViewerImageState extends State<_ViewerImage>
   }
 
   void _handleDoubleTap() {
+    if (!widget.interactionEnabled ||
+        !widget.pageController.hasClients ||
+        widget.pageController.position.isScrollingNotifier.value) {
+      return;
+    }
     if (_zoomed) {
       _animateZoom(Matrix4.identity());
       return;
@@ -677,6 +879,7 @@ class _ViewerImageState extends State<_ViewerImage>
   }
 
   void _tickZoom() {
+    if (!widget.interactionEnabled) return;
     final animation = _zoomTransform;
     if (animation == null) return;
     _transform.value = animation.value;

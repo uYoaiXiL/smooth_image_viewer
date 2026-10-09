@@ -98,19 +98,21 @@ class GalleryPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text('点击图片进入预览，支持双击缩放、双指缩放、左右切换和下滑关闭。'),
+                const Text(
+                  'Tap an image to preview. Double-tap or pinch to zoom, swipe to switch images, and pull down to close.',
+                ),
                 const SizedBox(height: 16),
                 _Section(
-                  title: '多图预览 + 缩略图首帧',
+                  title: 'Gallery · Thumbnails & preloading',
                   child: _GalleryGrid(images: images),
                 ),
                 _Section(
-                  title: 'Hero 形状',
+                  title: 'Hero shapes',
                   child: Row(
                     children: [
                       Expanded(
                         child: _HeroSample(
-                          label: '圆形',
+                          label: 'Circle',
                           tag: 'circle',
                           shape: const ImageViewerShape.rounded(99),
                           image: images[1],
@@ -118,7 +120,7 @@ class GalleryPage extends StatelessWidget {
                       ),
                       Expanded(
                         child: _HeroSample(
-                          label: '统一圆角',
+                          label: 'Rounded',
                           tag: 'rounded',
                           shape: const ImageViewerShape.rounded(20),
                           image: images[2],
@@ -126,7 +128,7 @@ class GalleryPage extends StatelessWidget {
                       ),
                       Expanded(
                         child: _HeroSample(
-                          label: '四角圆角',
+                          label: 'Custom corners',
                           tag: 'corners',
                           shape: const ImageViewerShape.roundedCorners(
                             BorderRadius.only(
@@ -143,12 +145,18 @@ class GalleryPage extends StatelessWidget {
                   ),
                 ),
                 _Section(
-                  title: '过渡速度档位',
+                  title: 'Custom overlayBuilder',
+                  child: _OverlaySample(
+                    images: images.take(3).toList(growable: false),
+                  ),
+                ),
+                _Section(
+                  title: 'Transition speed',
                   child: Row(
                     children: [
                       Expanded(
                         child: _HeroSample(
-                          label: '快',
+                          label: 'Fast',
                           tag: 'speed-fast',
                           image: images[3],
                           transitionSpeed: ImageViewerTransitionSpeed.fast,
@@ -157,7 +165,7 @@ class GalleryPage extends StatelessWidget {
                       ),
                       Expanded(
                         child: _HeroSample(
-                          label: '中（默认）',
+                          label: 'Normal (default)',
                           tag: 'speed-normal',
                           image: images[4],
                           transitionSpeed: ImageViewerTransitionSpeed.normal,
@@ -166,7 +174,7 @@ class GalleryPage extends StatelessWidget {
                       ),
                       Expanded(
                         child: _HeroSample(
-                          label: '慢',
+                          label: 'Slow',
                           tag: 'speed-slow',
                           image: images[5],
                           transitionSpeed: ImageViewerTransitionSpeed.slow,
@@ -177,9 +185,9 @@ class GalleryPage extends StatelessWidget {
                   ),
                 ),
                 _Section(
-                  title: '单图预览',
+                  title: 'Single image',
                   child: _HeroSample(
-                    label: '无 Hero 单图',
+                    label: 'Without Hero',
                     tag: null,
                     image: images[0],
                     shape: const ImageViewerShape.rounded(12),
@@ -246,6 +254,95 @@ class _GalleryGrid extends StatelessWidget {
               (i) => 'gallery-$i',
             ),
             previewProviders: images,
+            preloadAdjacentImages: true,
+            pageIndicatorSemanticLabelBuilder: (index, total) =>
+                'Image ${index + 1} of $total',
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OverlaySample extends StatelessWidget {
+  const _OverlaySample({required this.images});
+
+  final List<AssetImage> images;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (var index = 0; index < images.length; index++) ...[
+          if (index > 0) const SizedBox(width: 8),
+          Expanded(
+            child: ImageViewerHero(
+              tag: 'overlay-$index',
+              shape: const ImageViewerShape.rounded(12),
+              child: _PreviewTile(
+                key: ValueKey('overlay-preview-$index'),
+                image: images[index],
+                onTap: () => _open(context, index),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _open(BuildContext context, int initialIndex) {
+    ImageViewerRoute.open(
+      context,
+      images: images,
+      initialIndex: initialIndex,
+      heroTags: List<Object?>.generate(
+        images.length,
+        (index) => 'overlay-$index',
+      ),
+      previewProviders: images,
+      pageIndicatorSemanticLabelBuilder: (index, total) =>
+          'Image ${index + 1} of $total',
+      overlayBuilder: (previewContext, index) => Align(
+        alignment: Alignment.bottomCenter,
+        child: SafeArea(
+          minimum: const EdgeInsets.all(16),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Material(
+              color: Colors.black87,
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Custom title · Image ${index + 1}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Swipe to update the title. This caption and button are provided by the example app.',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton(
+                      onPressed: () => Navigator.of(previewContext).pop(),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Close preview'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),
@@ -298,7 +395,7 @@ class _HeroSample extends StatelessWidget {
 }
 
 class _PreviewTile extends StatelessWidget {
-  const _PreviewTile({required this.image, required this.onTap});
+  const _PreviewTile({super.key, required this.image, required this.onTap});
 
   final ImageProvider<Object> image;
   final VoidCallback onTap;
