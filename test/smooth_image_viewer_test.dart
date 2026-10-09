@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:smooth_image_viewer/smooth_image_viewer.dart';
@@ -84,6 +85,91 @@ final _image = MemoryImage(
 );
 
 void main() {
+  for (final delayed in [false, true]) {
+    testWidgets(
+      'zoomed pan does not reveal the static image (loading: $delayed)',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(400, 600));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final assets = (await tester.runAsync(() async {
+          final recorder = ui.PictureRecorder();
+          Canvas(recorder).drawRect(
+            const Rect.fromLTWH(0, 0, 200, 100),
+            Paint()..color = Colors.red,
+          );
+          final picture = recorder.endRecording();
+          final image = await picture.toImage(200, 100);
+          picture.dispose();
+          final data = await image.toByteData(format: ui.ImageByteFormat.png);
+          return (MemoryImage(data!.buffer.asUint8List()), image);
+        }))!;
+        addTearDown(assets.$2.dispose);
+        final pending = _ControlledImage(0, []);
+        const captureKey = ValueKey('preview capture');
+        await tester.pumpWidget(
+          RepaintBoundary(
+            key: captureKey,
+            child: _TestApp(
+              images: [delayed ? pending : assets.$1],
+              previewProviders: [assets.$1],
+            ),
+          ),
+        );
+        await tester.runAsync(
+          () => precacheImage(assets.$1, tester.element(find.text('open'))),
+        );
+        await tester.tap(find.text('open'));
+        await tester.pumpAndSettle();
+
+        Future<int> pixelAt(int x, int y) async {
+          final boundary = tester.renderObject<RenderRepaintBoundary>(
+            find.byKey(captureKey),
+          );
+          return (await tester.runAsync(() async {
+            final capture = await boundary.toImage(pixelRatio: 1);
+            final data = (await capture.toByteData(
+              format: ui.ImageByteFormat.rawRgba,
+            ))!;
+            final offset = (y * capture.width + x) * 4;
+            final color = Color.fromARGB(
+              data.getUint8(offset + 3),
+              data.getUint8(offset),
+              data.getUint8(offset + 1),
+              data.getUint8(offset + 2),
+            );
+            capture.dispose();
+            return color.toARGB32();
+          }))!;
+        }
+
+        expect(await pixelAt(200, 220), Colors.red.toARGB32());
+        await tester.tapAt(const Offset(200, 300));
+        await tester.pump(const Duration(milliseconds: 60));
+        await tester.tapAt(const Offset(200, 300));
+        await tester.pumpAndSettle();
+        final gesture = await tester.startGesture(const Offset(200, 300));
+        for (final dy in [40.0, 80.0, 80.0]) {
+          await gesture.moveBy(Offset(0, dy));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await gesture.up();
+        await tester.pumpAndSettle();
+        expect(await pixelAt(200, 220), Colors.black.toARGB32());
+        expect(await pixelAt(200, 500), Colors.red.toARGB32());
+
+        if (delayed) {
+          pending.result.complete(ImageInfo(image: assets.$2.clone()));
+          await tester.pumpAndSettle();
+          expect(await pixelAt(200, 220), Colors.black.toARGB32());
+          expect(await pixelAt(200, 500), Colors.red.toARGB32());
+        }
+        await tester.tap(find.byType(IconButton));
+        await tester.pumpAndSettle();
+        expect(find.byType(PageView), findsNothing);
+      },
+    );
+  }
+
   testWidgets('a horizontal gesture cannot turn into pull-down dismissal', (
     tester,
   ) async {
@@ -164,7 +250,7 @@ void main() {
         );
         await gesture.moveBy(const Offset(0, 160));
         await tester.pump();
-        await tester.tap(find.byIcon(Icons.close), pointer: 2);
+        await tester.tap(find.byType(IconButton), pointer: 2);
         await tester.pump(Duration(milliseconds: releaseDelay));
         await gesture.up();
         await tester.pumpAndSettle();
@@ -199,7 +285,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 60));
       await tester.tapAt(const Offset(300, 300));
       await tester.pump(const Duration(milliseconds: 50));
-      await tester.tap(find.byIcon(Icons.close));
+      await tester.tap(find.byType(IconButton));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(find.text('open'), findsOneWidget);
@@ -295,7 +381,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 60));
     await tester.tapAt(const Offset(300, 300));
     await tester.pump(const Duration(milliseconds: 50));
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byType(IconButton));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.byType(PageView), findsNothing);
@@ -404,7 +490,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(loads, [2]);
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byType(IconButton));
     await tester.pumpAndSettle();
     next.result.completeError(StateError('preload failed'));
     await tester.pumpAndSettle();
@@ -421,9 +507,17 @@ void main() {
       await tester.pumpWidget(_TestApp(images: [_image, _image]));
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
-      expect(find.byTooltip('Close'), findsOneWidget);
+      expect(find.byType(IconButton), findsOneWidget);
       final close = tester.getSemantics(find.byType(IconButton));
-      expect(close.getSemanticsData().tooltip, 'Close');
+      expect(close.getSemanticsData().label, 'Close');
+      expect(close.getSemanticsData().tooltip, isEmpty);
+      expect(tester.getTopLeft(find.byType(IconButton)).dy, 32);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      await mouse.moveTo(tester.getCenter(find.byType(IconButton)));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(Tooltip), findsNothing);
+      await mouse.removePointer();
       expect(close.getSemanticsData().flagsCollection.isButton, isTrue);
       expect(
         close.getSemanticsData().flagsCollection.isFocused,
@@ -461,7 +555,17 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    expect(Focus.of(tester.element(find.byIcon(Icons.close))).hasFocus, isTrue);
+    expect(
+      Focus.of(
+        tester.element(
+          find.descendant(
+            of: find.byType(IconButton),
+            matching: find.byType(Icon),
+          ),
+        ),
+      ).hasFocus,
+      isTrue,
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.pump();
     expect(overlayFocus.hasFocus, isTrue);
@@ -504,7 +608,7 @@ void main() {
         expect(label.overlaps(close), isFalse);
         expect(label.left, greaterThanOrEqualTo(0));
         expect(label.right, lessThanOrEqualTo(200));
-        await tester.tap(find.byIcon(Icons.close));
+        await tester.tap(find.byType(IconButton));
         await tester.pumpAndSettle();
         expect(find.text('open'), findsOneWidget);
       } finally {
@@ -534,7 +638,7 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       expect(find.text('action 1'), findsOneWidget);
-      expect(find.byIcon(Icons.close), findsOneWidget);
+      expect(find.byType(IconButton), findsOneWidget);
 
       await tester.dragFrom(
         const Offset(700, 300),
@@ -850,6 +954,7 @@ class _TestApp extends StatelessWidget {
     this.textScale = 1,
     this.direction = TextDirection.ltr,
     this.enableExitHero = true,
+    this.previewProviders,
   });
   final List<ImageProvider<Object>> images;
   final int initialIndex;
@@ -859,6 +964,7 @@ class _TestApp extends StatelessWidget {
   final double textScale;
   final TextDirection direction;
   final bool enableExitHero;
+  final List<ImageProvider<Object>?>? previewProviders;
 
   @override
   Widget build(BuildContext context) {
@@ -878,6 +984,7 @@ class _TestApp extends StatelessWidget {
                 images: images,
                 initialIndex: initialIndex,
                 enableExitHero: enableExitHero,
+                previewProviders: previewProviders,
                 overlayBuilder: overlayBuilder,
                 preloadAdjacentImages: preloadAdjacentImages,
                 pageIndicatorSemanticLabelBuilder:

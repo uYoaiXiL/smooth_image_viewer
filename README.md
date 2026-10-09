@@ -23,7 +23,7 @@ presentation and interaction.
   the current image index and your own button callbacks.
 - **Optional preloading** — warm the immediate next and previous images with
   sequential requests through Flutter's shared image cache.
-- **Accessibility** — localized close tooltips, keyboard focus, customizable
+- **Accessibility** — localized close labels, keyboard focus, customizable
   page announcements, large text, and right-to-left header layouts.
 - **No third-party runtime dependencies** — works with asset, network, memory,
   and custom image providers supported by your target platform.
@@ -41,7 +41,7 @@ on Web must satisfy the image host's CORS policy.
 
 ```yaml
 dependencies:
-  smooth_image_viewer: ^0.6.0
+  smooth_image_viewer: ^0.6.1
 ```
 
 ```dart
@@ -179,10 +179,11 @@ Additional fingers cancel pending dismissal and unfinished paging. Lift all
 fingers before starting a new pull-down gesture; double-tap zoom is accepted
 once paging settles.
 
-The close button uses `MaterialLocalizations`, receives initial keyboard focus,
-and has a visible focus highlight. Tab and Shift+Tab move between focusable
-controls; Enter or Space activates buttons. The header respects text scaling
-and layout direction.
+The close button has a localized screen-reader label from `MaterialLocalizations`
+and receives initial keyboard focus, without a visual tooltip or background.
+Tab and Shift+Tab move between focusable controls; Enter or Space activates
+buttons. The header respects text scaling, layout direction, and safe areas,
+with additional top spacing when the device has no top inset.
 
 The page count announces changes with a live semantic description. To localize
 it, pass a builder to `ImageViewerRoute.open`:

@@ -1,3 +1,15 @@
+## 0.6.1 - 2026-10-09
+
+* Fixed the static Hero image showing behind a zoomed, panned image. Loading
+  thumbnails now share the interactive transform while preserving Hero
+  transitions.
+* Removed the close button's visual tooltip and interaction background while
+  retaining its localized accessible label and keyboard support.
+* Added minimum top spacing for the close button and page indicator on displays
+  without a top safe-area inset.
+* Added pixel-level regression coverage for panning with loaded images and
+  loading thumbnails, and updated accessibility and example tests.
+
 ## 0.6.0 - 2026-10-09
 
 * Added `overlayBuilder` for custom captions and controls that follow the current

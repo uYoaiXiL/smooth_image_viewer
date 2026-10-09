@@ -21,7 +21,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('2 / 6'), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.close));
+    await tester.tap(find.byType(IconButton));
     await tester.pumpAndSettle();
     expect(find.text('1 / 6'), findsNothing);
     expect(find.text('Gallery · Thumbnails & preloading'), findsOneWidget);

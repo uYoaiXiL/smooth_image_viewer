@@ -146,7 +146,7 @@ class ImageViewerRoute {
   ///
   /// [pageIndicatorSemanticLabelBuilder] customizes the screen-reader label
   /// using a zero-based index and the total image count. It defaults to
-  /// "Image 1 of 3". The close tooltip uses [MaterialLocalizations].
+  /// "Image 1 of 3". The close button's semantic label uses [MaterialLocalizations].
   ///
   /// The returned Future completes when the preview route is dismissed. An
   /// empty [images] list is ignored.
@@ -400,46 +400,67 @@ class _ViewerPageState extends State<_ViewerPage>
                 child: Opacity(
                   opacity: opacity,
                   child: SafeArea(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (widget.showCloseButton)
-                          IconButton(
-                            autofocus: true,
-                            tooltip: MaterialLocalizations.of(
-                              context,
-                            ).closeButtonTooltip,
-                            focusColor: Colors.white24,
-                            onPressed: _closing ? null : _dismiss,
-                            icon: const Icon(Icons.close, color: Colors.white),
-                          ),
-                        if (widget.showPageIndicator &&
-                            widget.images.length > 1)
-                          Expanded(
-                            child: Align(
-                              alignment: AlignmentDirectional.topEnd,
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Semantics(
-                                  liveRegion: true,
-                                  excludeSemantics: true,
-                                  label:
-                                      widget.pageIndicatorSemanticLabelBuilder
-                                          ?.call(
-                                            _index,
-                                            widget.images.length,
-                                          ) ??
-                                      'Image ${_index + 1} of ${widget.images.length}',
-                                  child: Text(
-                                    '${_index + 1} / ${widget.images.length}',
-                                    textAlign: TextAlign.end,
-                                    style: const TextStyle(color: Colors.white),
+                    minimum: const EdgeInsets.only(top: 16),
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (widget.showCloseButton)
+                            IconButton(
+                              autofocus: true,
+                              focusColor: Colors.transparent,
+                              hoverColor: Colors.transparent,
+                              highlightColor: Colors.transparent,
+                              splashColor: Colors.transparent,
+                              style: const ButtonStyle(
+                                backgroundColor: WidgetStatePropertyAll(
+                                  Colors.transparent,
+                                ),
+                                overlayColor: WidgetStatePropertyAll(
+                                  Colors.transparent,
+                                ),
+                                splashFactory: NoSplash.splashFactory,
+                              ),
+                              onPressed: _closing ? null : _dismiss,
+                              icon: Icon(
+                                Icons.close_rounded,
+                                color: Colors.white,
+                                semanticLabel: MaterialLocalizations.of(
+                                  context,
+                                ).closeButtonTooltip,
+                              ),
+                            ),
+                          if (widget.showPageIndicator &&
+                              widget.images.length > 1)
+                            Expanded(
+                              child: Align(
+                                alignment: AlignmentDirectional.topEnd,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Semantics(
+                                    liveRegion: true,
+                                    excludeSemantics: true,
+                                    label:
+                                        widget.pageIndicatorSemanticLabelBuilder
+                                            ?.call(
+                                              _index,
+                                              widget.images.length,
+                                            ) ??
+                                        'Image ${_index + 1} of ${widget.images.length}',
+                                    child: Text(
+                                      '${_index + 1} / ${widget.images.length}',
+                                      textAlign: TextAlign.end,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -770,10 +791,11 @@ class _ViewerImageState extends State<_ViewerImage>
           fit: BoxFit.fitWidth,
           alignment: Alignment.center,
           gaplessPlayback: true,
-          frameBuilder: (_, child, frame, sync) => AnimatedOpacity(
-            opacity: frame != null || sync ? 1 : 0,
+          // Keep the loading preview in the same transform as the full image.
+          // A stationary fallback underneath would show through when panning.
+          frameBuilder: (_, child, frame, sync) => AnimatedSwitcher(
             duration: const Duration(milliseconds: 120),
-            child: child,
+            child: frame != null || sync ? child : staticImage,
           ),
           errorBuilder: (_, _, _) => const SizedBox(
             width: 42,
@@ -829,7 +851,12 @@ class _ViewerImageState extends State<_ViewerImage>
             SizedBox(
               width: constraints.maxWidth,
               height: constraints.maxHeight,
-              child: Center(child: hero),
+              // Preserve Hero registration and geometry for the return flight,
+              // but do not paint a second image underneath the interactive one.
+              child: Opacity(
+                opacity: widget.settled ? 0 : 1,
+                child: Center(child: hero),
+              ),
             ),
             if (widget.settled)
               IgnorePointer(
